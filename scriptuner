@@ -1,0 +1,20 @@
+#!/bin/sh
+
+# This is how it starts...
+# Get a json file via wget or curl.
+# Then pull the values out of it for each station (or a single station)
+
+
+jsonValue() {
+KEY=$1
+num=$2
+awk -F"[,:}]" '{for(i=1;i<=NF;i++){if($i~/\042'$KEY'\042/){print $(i+1)}}}' | tr -d '"' | sed -n ${num}p
+}
+
+vals=$(wget http://www.radio-browser.info/webservice/json/stations/bytag/$1)
+
+echo $vals | jsonValue id $2
+echo $vals | jsonValue name $2
+echo $vals | jsonValue url $2
+echo $vals | jsonValue codec $2
+echo $vals | jsonValue bitrate $2
