@@ -9,6 +9,8 @@
 #   scriptuner disco 1
 
 # Notice how the url value needs work to get past the colon in http://...
+#  and it still needs the bit after the 2nd colon removed if it does not start with a number
+#  Or actually just remove any ":homepage" with sed.
 
 jsonValue() {
 KEY=$1
@@ -16,10 +18,16 @@ num=$2
 awk -F"[,:}]" '{for(i=1;i<=NF;i++){if($i~/\042'$KEY'\042/){print $(i+1)}}}' | tr -d '"' | sed -n ${num}p
 }
 
+jsonURL() {
+KEY=$1
+num=$2
+awk -F"[,:}]" '{for(i=1;i<=NF;i++){if($i~/\042'$KEY'\042/){print $(i+1) ":" $(i+2) ":" $(i+3)}}}' | tr -d '"' | sed -n ${num}p |sed -e 's/:homepage//' 
+}
+
 wget "http://www.radio-browser.info/webservice/json/stations/bytag/$1"
 
 cat $1 | jsonValue id $2
 cat $1 | jsonValue name $2
-cat $1 | jsonValue url $2
+cat $1 | jsonURL url $2
 cat $1 | jsonValue codec $2
 cat $1 | jsonValue bitrate $2
