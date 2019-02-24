@@ -228,7 +228,7 @@ move () {
 
 # List the files (possibly filtered).  Adjust filter to not skip directories
 listfiles () {
-  local args="-p"
+  local args="-pL"
   [ -n "$hidden" ] && args="$args -A"
   if [ -n "$filter" ]; then
     ls "$args" | grep -e / -e "$filter"
