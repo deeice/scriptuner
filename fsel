@@ -1,5 +1,4 @@
 #   #!/bin/sh
-# This software is distributed under the terms of the GNU GPL version 3.
 
 # keys
 E=$(printf "\033")
@@ -69,7 +68,7 @@ on_exit () {
   # Restore signal handlers
   eval "$save_traps"
 
-  #echo -n "${E}[?8h" #auto-repeat (not in xterm)
+  # Restore terminal settings
   [ -n "$_STTY" ] && stty $_STTY
   
   # Place the cursor at a sane position
@@ -103,12 +102,10 @@ get_dimensions () {
 
 get_key() # Works without stty but takes a sec for ESC key (not ESC sequence) 
 {
-  #_KEY=$(IFS="${NL}" ; read -rsn1 _KEY ; echo "$_KEY")
   IFSBAK=$IFS ; IFS=
   read -rsn1 _KEY
   case "${_KEY}" in
     "${E}") _K=""; read -sn2 -t1 _K; _KEY="${E}${_K}";
-      #[ -n "$_K" ] && { _K=""; read -sn1 -t1 _K; _KEY="${_KEY}${_K}"; }
       case "${_K}" in
 	"[A"|"[B"|"[C"|"[D"|"") ;;
 	"OP"|"OQ"|"OR"|"OS") ;;
@@ -132,7 +129,7 @@ match () {
   IFS=$IFSBAK ; IFSBAK=
 }
 
-# search any match from sel list
+# delete any match from sel list
 remove () {
   IFSBAK=$IFS ; IFS="$NL"
   for line in $sel ; do
@@ -156,7 +153,6 @@ act () {
   IFS=$IFSBAK ; IFSBAK=
 }
   
-# A function used for moving the cursor around
 move () {
   local arg="$1"
   redraw=1
@@ -334,9 +330,8 @@ fi
   
 save_traps="$(trap)"
 
-#echo -n "${E}[?8l" #auto-repeat off (not in xterm)
+# Set terminal to hide keystrokes.
 [ -n "$(which stty)" ] && { _STTY=`stty -g`; stty -echo; }
-#[ -n "$_STTY" ] && echo -n "${E}[12h"
   
 # Set up signal handlers
 trap on_resize SIGWINCH
@@ -348,21 +343,7 @@ while true; do
   [ -n "$resize" ] && get_dimensions
   [ -n "$redraw" ] && draw
 
-  #get_key
-  IFSBAK=$IFS ; IFS=
-  read -rsn1 _KEY
-  case "${_KEY}" in
-    "${E}") _K=""; read -sn2 -t1 _K; _KEY="${E}${_K}";
-      #[ -n "$_K" ] && { _K=""; read -sn1 -t1 _K; _KEY="${_KEY}${_K}"; }
-      case "${_K}" in
-	"[A"|"[B"|"[C"|"[D"|"") ;;
-	"OP"|"OQ"|"OR"|"OS") ;;
-	*) _K=""; read -n1 -t1 _K; _KEY="${_KEY}${_K}" ;;
-      esac
-  ;;  "") _KEY="NL"
-  ;;
-  esac
-  IFS=$IFSBAK ; IFSBAK=
+  get_key
   
   case "$_KEY" in
     "${DN}")
@@ -404,20 +385,3 @@ while true; do
 
 done
 
-# Print out some junk for debug purposes.  Delete this in final version.
-# At this point $sel has a NL separated list.
-# Its in reverse order than selected, so probably want to reverse it now.
-revsel=""
-IFSBAK=$IFS ; IFS="$NL"
-for line in $sel ; do
-  [ -n revsel ] && revsel="${NL}$revsel"
-  revsel="${line}$revsel"
-done
-IFS=$IFSBAK ; IFSBAK=
-
-echo "${NL}${NL}$revsel"
-
-echo "filter: $filter"
-echo "action: $action"
-
-[ -n "$_STTY" ] && stty sane 
