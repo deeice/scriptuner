@@ -1,0 +1,423 @@
+#   #!/bin/sh
+# This software is distributed under the terms of the GNU GPL version 3.
+
+# keys
+E=$(printf "\033")
+
+C_D=$(printf "\004")
+C_H=$(printf "\010")
+C_L=$'\x0c'
+TAB=$(printf "\011")
+BS=$(printf "\177")
+SP=" "
+UP="${E}[A"
+DN="${E}[B"
+RT="${E}[C"
+LF="${E}[D"
+HM="${E}[1~"
+IN="${E}[2~"
+DL="${E}[3~"
+EN="${E}[4~"
+PU="${E}[5~"
+PD="${E}[6~"
+HOM="${E}OH"
+END="${E}OF"
+F1="${E}OP"
+F2="${E}OQ"
+F3="${E}OR"
+F4="${E}OS"
+F5="${E}[15"
+F6="${E}[17"
+F7="${E}[18"
+F8="${E}[19"
+NL='
+'
+
+# ANSI colors (darK,Red,Green,Yellow,Blue,Magenta,Cyan,White,Normal)
+K="${E}[1;30m"
+R="${E}[1;31m"
+G="${E}[1;32m"
+Y="${E}[1;33m"
+B="${E}[1;34m"
+M="${E}[1;35m"
+C="${E}[1;36m"
+W="${E}[1;37m"
+N="${E}[0m"
+BOLD="${E}[1m"
+REV="${E}[7m"
+ITAL="${E}[3m"
+UNDR="${E}[4m"
+BLNK="${E}[5m"
+
+# Reverse Red
+RR="${E}[7;31m"
+WB="${E}[1;44;37m"
+BW="${E}[0;47;34m"
+
+DRAW="${E}(0"
+TEXT="${E}(B"
+
+# Signal handler for resizing, also executed when typing Ctrl+L
+on_resize () {
+  redraw=1
+  reprint=1
+  resize=1
+}
+
+# This function cleans up the environment on exiting.
+on_exit () {
+  # Restore signal handlers
+  eval "$save_traps"
+
+  #echo -n "${E}[?8h" #auto-repeat (not in xterm)
+  [ -n "$_STTY" ] && stty $_STTY
+  
+  # Place the cursor at a sane position
+  [ -z "$total" ] && total="$(listfiles | wc -l)"
+  echo -n "${E}[$((total - index + 3));1H"
+}
+
+on_kill () {
+  on_exit
+  exit 0
+}
+
+# Determine the dimensions of the screen
+get_dimensions () {
+  _K=""
+  echo -en "${E}[s${E}[999;999H${E}[6n${E}[u"
+  read -sn6 -t1 S
+  read -sn1 -t1 _K; S="${S}${_K}"; 
+  [ -n "_K" ] && { _K=""; read -sn1 -t1 _K; S="${S}${_K}"; }
+  S="${S#*[}"
+  cols="${S#*;}"
+  cols="${cols%*R}"
+  lines="${S%;*}"
+}
+
+# NOTE: This struggles to keep up when auto key repeat happens on zipit.
+# When it cannot keep up it prints ESC sequence keystrokes on top of the filenames.
+# This is because the echo suppression is only active during the reads.
+# Using stty -echo seems to be the only way to eliminate this behavior.
+# So I can make a 2.5K fake stty program in C for that on systems without it.
+
+get_key() # Works without stty but takes a sec for ESC key (not ESC sequence) 
+{
+  #_KEY=$(IFS="${NL}" ; read -rsn1 _KEY ; echo "$_KEY")
+  IFSBAK=$IFS ; IFS=
+  read -rsn1 _KEY
+  case "${_KEY}" in
+    "${E}") _K=""; read -sn2 -t1 _K; _KEY="${E}${_K}";
+      #[ -n "$_K" ] && { _K=""; read -sn1 -t1 _K; _KEY="${_KEY}${_K}"; }
+      case "${_K}" in
+	"[A"|"[B"|"[C"|"[D"|"") ;;
+	"OP"|"OQ"|"OR"|"OS") ;;
+	*) _K=""; read -n1 -t1 _K; _KEY="${_KEY}${_K}" ;;
+      esac
+  ;;  "") _KEY="NL"
+  ;;
+  esac
+  IFS=$IFSBAK ; IFSBAK=
+}
+
+# search sel list for a match
+match () {
+  IFSBAK=$IFS ; IFS="$NL"
+  for line in $sel ; do
+    if [ "${PWD}/$f" == "$line" ] ; then
+      echo "$line"
+      break
+    fi
+  done
+  IFS=$IFSBAK ; IFSBAK=
+}
+
+# search any match from sel list
+remove () {
+  IFSBAK=$IFS ; IFS="$NL"
+  for line in $sel ; do
+    [ ! "${PWD}/$f" == "$line" ] &&  echo "$line"
+  done
+  IFS=$IFSBAK ; IFSBAK=
+}
+
+act () {
+  revsel=""
+  IFSBAK=$IFS ; IFS="$NL"
+  for line in $sel ; do
+    [ -n revsel ] && revsel="${NL}$revsel"
+    revsel="${line}$revsel"
+  done
+  for f in $revsel ; do
+    [ -z "$f" ] && return
+    [ -d "$f" ] && f="$f*" #apply filter?
+    eval $action "$f"
+  done
+  IFS=$IFSBAK ; IFSBAK=
+}
+  
+# A function used for moving the cursor around
+move () {
+  local arg="$1"
+  redraw=1
+
+  #if $f is in sel list then redraw it red, else redraw normal
+  if [ -n "$(match)" ]; then
+    echo -n "${R}${f}${N}"
+  else
+    echo -n "${f}"
+  fi
+
+  # Save the previous index and move cursor
+  old_index="$index"
+  cursor="$((cursor + arg))"
+
+  if [ "$cursor" -ge "$visible" ]; then
+    # Cursor moved past the bottom of the list
+
+    if [ "$visible" -ge "$total" ]; then
+      # The list fits entirely on the screen.
+      index=1
+    else
+      # The list doesn't fit on the screen.
+      if [ "$((index + cursor))" -gt "$total" ]; then
+        # Cursor out of bounds. Put it at the very bottom.
+        index="$max_index"
+      else
+        # Move the index down so the visible part of the list
+        # also shows the cursor
+        difference="$((visible - 1 - cursor))"
+        index="$((index - difference))"
+      fi
+    fi
+
+    # In any case, place the cursor on the last file.
+    cursor="$max_cursor"
+  fi
+
+  if [ "$cursor" -lt 0 ]; then
+    # Cursor is above the list, so scroll up.
+    index="$((index + cursor))"
+    cursor=0
+  fi
+
+  # The index should always be >0 and <$max_index
+  [ "$index" -gt "$max_index" ] && index="$max_index"
+  [ "$index" -lt 1 ] && index=1
+
+  if [ "$index" != "$old_index" ]; then
+    # Redraw if the index (and thus the visible files) has changed
+    reprint=1
+
+    # Jump a step when scrolling
+    if [ "$index" -gt "$old_index" ]; then
+      # Jump a step down
+      step="$((max_index - index))"
+      [ "$step" -gt "$maxstep" ] && step="$maxstep"
+      index="$((index + step))"
+      cursor="$((cursor - step))"
+    else
+      # Jump a step up
+      step="$((index - 1))"
+      [ "$step" -gt "$maxstep" ] && step="$maxstep"
+      index="$((index - step))"
+      cursor="$((cursor + step))"
+    fi
+  fi
+
+  # The index should always be >0 and <$max_index
+  [ "$index" -gt "$max_index" ] && index="$max_index"
+  [ "$index" -lt 1 ] && index=1
+}
+
+# List the files (possibly filtered).  Adjust filter to not skip directories
+listfiles () {
+  local args="-p"
+  [ -n "$hidden" ] && args="$args -A"
+  if [ -n "$filter" ]; then
+    ls "$args" | grep -e / -e "$filter"
+  else
+    ls "$args"
+  fi
+}
+
+# Change the directory
+movedir () {
+  redraw=1
+  reprint=1
+  index=1
+  cursor=0
+  cd "$1"
+  PWD="$(pwd)"
+}
+
+# The drawing function
+draw () {
+  # Erase the screen if necessary
+  if [ -n "$reprint" ]; then
+    clear
+    # Determine the number of total files in the directory
+    files=$(listfiles)
+    total=$(echo "$files" | wc -l)
+    
+    # Determine the number of visible files
+    visible="$((lines - 2))"
+    [ "$total" -lt "$visible" ] && visible="$total"
+
+    max_index="$((total - visible + 1))"
+    max_cursor="$((visible - 1))"
+
+    # Print the path and the list of files
+    echo "${E}[1;1H${E}[K${E}[1;32m${E}[1;34m${PWD}${E}[00m"
+    # Reduce the list of files to whats actually on screen
+    files=$(echo "$files" | tail -n +"$index" | head -n "$((lines - 2))" | sed 's/\(.\{'"$cols"'\}\).*/\1/;')
+
+    # Must turn selected files red before drawing them.
+    IFSBK=$IFS ; IFS="$NL"
+    for f in $files ; do
+      for line in $sel ; do
+        if [ "${PWD}/$f" == "$line" ] ; then
+	  f="${R}${f}${N}"
+          break
+        fi
+      done
+      echo "$f"
+    done
+    IFS=$IFSBK ; IFSBK=
+  fi
+
+  # Determine the current file
+  f=$(echo "$files" | tail -n +"$((cursor + 1))" | head -n 1)
+
+  # Clear the gui flags
+  redraw=
+  reprint=
+  resize=
+
+  # Move the cursor to the requested position
+  pos="${E}[$((cursor + 2));1H"
+
+  # Draw $f REVERSED.  If $f in sel list make text red.
+  if [ -n "$(match)" ]; then
+    echo -n "$pos${RR}${f}${N}$pos"
+  else
+    echo -n "$pos${REV}${f}${N}$pos"
+  fi
+}
+
+# Initialize selection variables
+PWD="$(pwd)"
+sel=""
+
+# Initialize position variables
+index=1   # the number of the topmost visible line
+cursor=0  # the number of the selected file, relative to index
+total=0   # total number of files in this directory
+visible=0 # total visible on screen
+
+# Variables related to the GUI
+redraw=1  # should the draw() function be entered?
+reprint=1 # should the interface be redrawn?
+resize=1
+maxstep=6
+
+# Initialize settings (need to pass in action and possibly a filter)
+hidden=
+filter=
+if [ "$1" == "-f" -a -n "$2" ] ; then
+  filter="$2"
+  action="${@:3}"
+else
+  action="${@}"
+fi
+[ -z "$action" ] && action=less
+  
+save_traps="$(trap)"
+
+#echo -n "${E}[?8l" #auto-repeat off (not in xterm)
+[ -n "$(which stty)" ] && { _STTY=`stty -g`; stty -echo; }
+#[ -n "$_STTY" ] && echo -n "${E}[12h"
+  
+# Set up signal handlers
+trap on_resize SIGWINCH
+trap on_kill SIGINT
+
+# The program loop that handles the input and draws the interface
+while true; do
+  # Redraw the interface if requested
+  [ -n "$resize" ] && get_dimensions
+  [ -n "$redraw" ] && draw
+
+  #get_key
+  IFSBAK=$IFS ; IFS=
+  read -rsn1 _KEY
+  case "${_KEY}" in
+    "${E}") _K=""; read -sn2 -t1 _K; _KEY="${E}${_K}";
+      #[ -n "$_K" ] && { _K=""; read -sn1 -t1 _K; _KEY="${_KEY}${_K}"; }
+      case "${_K}" in
+	"[A"|"[B"|"[C"|"[D"|"") ;;
+	"OP"|"OQ"|"OR"|"OS") ;;
+	*) _K=""; read -n1 -t1 _K; _KEY="${_KEY}${_K}" ;;
+      esac
+  ;;  "") _KEY="NL"
+  ;;
+  esac
+  IFS=$IFSBAK ; IFSBAK=
+  
+  case "$_KEY" in
+    "${DN}")
+      move 1;;
+    "${PD}")
+      move 10;;
+    "${PU}")
+      move -10;;
+    "${UP}")
+      move -1;;
+    "${EN}" | "${END}")
+      move 9999999999;;
+    "${HM}" | "${HOM}")
+      move -9999999999;;
+    "${LF}")
+      movedir ..;;
+    "${RT}" )
+      [ -d "$f" ] && movedir "$f";;
+    "${TAB}" | "${SP}")
+      # If $f in $sel, remove it else add it.
+      if [ -n "$(match)" ]; then
+	echo -n "${REV}${f}${N}$pos"
+	sel="$(remove)"
+      else
+	echo -n "${RR}${f}${N}$pos"
+	sel="${PWD}/${f}${NL}${sel}"
+      fi;;
+    $C_L | r ) 
+      on_resize;;
+    "${E}" | q )
+      on_exit
+      break;;
+    "NL" )
+      [ -z "$sel" ] && sel="${PWD}/${f}${NL}${sel}"
+      on_exit
+      act
+      break;;
+  esac
+
+done
+
+# Print out some junk for debug purposes.  Delete this in final version.
+# At this point $sel has a NL separated list.
+# Its in reverse order than selected, so probably want to reverse it now.
+revsel=""
+IFSBAK=$IFS ; IFS="$NL"
+for line in $sel ; do
+  [ -n revsel ] && revsel="${NL}$revsel"
+  revsel="${line}$revsel"
+done
+IFS=$IFSBAK ; IFSBAK=
+
+echo "${NL}${NL}$revsel"
+
+echo "filter: $filter"
+echo "action: $action"
+
+[ -n "$_STTY" ] && stty sane 
