@@ -24,10 +24,29 @@ num=$2
 awk -F"[,:}]" '{for(i=1;i<=NF;i++){if($i~/\042'$KEY'\042/){print $(i+1) ":" $(i+2) ":" $(i+3)}}}' | tr -d '"' | sed -n ${num}p |sed -e 's/:homepage//' 
 }
 
-wget "http://www.radio-browser.info/webservice/json/stations/bytag/$1"
+jsonList() {
+num=$1
+awk -F"[,:}]" '{for(i=1;i<=NF;i++){\
+if($i~/\042'name'\042/){print $(i+1) "... "};\
+if($i~/\042'url'\042/){print $(i+1) "... " $(i+3) ":" $(i+4) ":" $(i+5)};\
+}}'
+}
 
-cat $1 | jsonValue id $2
-cat $1 | jsonValue name $2
-cat $1 | jsonURL url $2
-cat $1 | jsonValue codec $2
-cat $1 | jsonValue bitrate $2
+# Fetch it
+rm -f $1
+wget "http://www.radio-browser.info/webservice/json/stations/bytag/$1"
+# Break into line based records for awk (and readability)
+sed -e 's/\\\\\//\//g' -e 's/[{}]/\n/g' $1 >$1.txt
+CNT=$(grep "\"id\":\"" $1.txt | wc -l)
+echo "Total=$CNT"
+
+cat $1.txt | jsonValue id $2
+cat $1.txt | jsonValue name $2
+cat $1.txt | jsonURL url $2
+cat $1.txt | jsonValue codec $2
+cat $1.txt | jsonValue bitrate $2
+
+cat $1.txt | jsonList $2
+
+
+
