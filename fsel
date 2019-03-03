@@ -1,4 +1,29 @@
-#   #!/bin/sh
+
+# Settle issues with different shells
+IZ2S=""
+ls="ls"
+lf="listfiles"
+if [ -n "$BASH_VERSION" ] ; then
+  echo "BASH= $BASH_VERSION"
+  n=-n; c=
+elif [ -n "$(busybox --help |grep authors)" ] ; then
+  n=-n; c=
+  echo "busybox=$(busybox --help |grep authors)"
+else 
+  # Check for old IZ2S busybox (before "many authors")
+  IZ2S="IZ2S"
+  echo "IZ2S"
+  c=\\c; n=
+  # Some IZ2S /bin/busybox apps (eg ls) do not pipe output.
+  # SD card busybox apps are ok.
+  ls="busybox ls"
+  # If on iz2jffs with no SD then use lsattr as a fake ls
+  [ -z $(busybox |grep ls) ] && lf="lsfiles"
+
+  #lf="lsfiles"  # DEBUG Delete Me
+fi
+[ -n "$IZ2S" ] && math() { expr $@ ; }
+[ -z "$IZ2S" ] && math() { echo $(( $@ )) ; }
 
 # keys
 E=$(printf "\033")
@@ -72,8 +97,8 @@ on_exit () {
   [ -n "$_STTY" ] && stty $_STTY
   
   # Place the cursor at a sane position
-  [ -z "$total" ] && total="$(listfiles | wc -l)"
-  echo -n "${E}[$((total - index + 3));1H"
+  [ -z "$total" ] && total="$($lf | wc -l)"
+  echo $n "${E}[$(math $total - $index + 3);1H$c"
 }
 
 on_kill () {
@@ -83,15 +108,23 @@ on_kill () {
 
 # Determine the dimensions of the screen
 get_dimensions () {
-  _K=""
-  echo -en "${E}[s${E}[999;999H${E}[6n${E}[u"
-  read -sn6 -t1 S
-  read -sn1 -t1 _K; S="${S}${_K}"; 
-  [ -n "$_K" ] && { _K=""; read -sn1 -t1 _K; S="${S}${_K}"; }
-  S="${S#*[}"
-  cols="${S#*;}"
-  cols="${cols%*R}"
-  lines="${S%;*}"
+  S=
+  [ -n "$(which stty)" ] && S=$(stty size)
+  if [ -n "$S" ] ; then
+    ROW=$(echo $S | cut -d " " -f 1)
+    COL=$(echo $S | cut -d " " -f 2)
+  else
+    _K=""
+    echo $n "$E[s$E[999;999H$E[6n$E[u"
+    read -sn6 -t1 S
+    read -sn1 -t1 _K; S="$S$_K"; 
+    [ -n "$_K" ] && { _K=""; read -sn1 -t1 _K; S="$S$_K"; }
+
+    S="${S#*[}"
+    COL="${S#*;}"
+    COL="${COL%*R}"
+    ROW="${S%;*}"
+  fi
 }
 
 # NOTE: This struggles to keep up when auto key repeat happens on zipit.
@@ -159,14 +192,14 @@ move () {
 
   #if $f is in sel list then redraw it red, else redraw normal
   if [ -n "$(match)" ]; then
-    echo -n "${R}${f}${N}"
+    echo $n "${R}${f}${N}$c"
   else
-    echo -n "${f}"
+    echo $n "${f}$c"
   fi
 
   # Save the previous index and move cursor
   old_index="$index"
-  cursor="$((cursor + arg))"
+  cursor="$(math $cursor + $arg)"
 
   if [ "$cursor" -ge "$visible" ]; then
     # Cursor moved past the bottom of the list
@@ -176,14 +209,14 @@ move () {
       index=1
     else
       # The list doesn't fit on the screen.
-      if [ "$((index + cursor))" -gt "$total" ]; then
+      if [ "$(math $index + $cursor)" -gt "$total" ]; then
         # Cursor out of bounds. Put it at the very bottom.
         index="$max_index"
       else
         # Move the index down so the visible part of the list
         # also shows the cursor
-        difference="$((visible - 1 - cursor))"
-        index="$((index - difference))"
+        difference="$(math $visible - 1 - $cursor)"
+        index="$(math $index - $difference)"
       fi
     fi
 
@@ -193,7 +226,7 @@ move () {
 
   if [ "$cursor" -lt 0 ]; then
     # Cursor is above the list, so scroll up.
-    index="$((index + cursor))"
+    index="$(math $index + $cursor)"
     cursor=0
   fi
 
@@ -208,16 +241,16 @@ move () {
     # Jump a step when scrolling
     if [ "$index" -gt "$old_index" ]; then
       # Jump a step down
-      step="$((max_index - index))"
+      step="$(math $max_index - $index)"
       [ "$step" -gt "$maxstep" ] && step="$maxstep"
-      index="$((index + step))"
-      cursor="$((cursor - step))"
+      index="$(math $index + $step)"
+      cursor="$(math $cursor - $step)"
     else
       # Jump a step up
-      step="$((index - 1))"
+      step="$(math $index - 1)"
       [ "$step" -gt "$maxstep" ] && step="$maxstep"
-      index="$((index - step))"
-      cursor="$((cursor + step))"
+      index="$(math $index - $step)"
+      cursor="$(math $cursor + $step)"
     fi
   fi
 
@@ -231,9 +264,17 @@ listfiles () {
   local args="-pL"
   [ -n "$hidden" ] && args="$args -A"
   if [ -n "$filter" ]; then
-    ls "$args" | grep -e / -e "$filter"
+    $ls "$args" | grep -e / -e "$filter"
   else
-    ls "$args"
+    $ls "$args"
+  fi
+}
+
+lsfiles () {
+  if [ -n "$filter" ]; then
+    lsattr 2>&1 |cut -d/ -f2 |cut -d: -f1 |grep -e / -e "$filter"
+  else
+    lsattr 2>&1 |cut -d/ -f2 |cut -d: -f1
   fi
 }
 
@@ -253,20 +294,20 @@ draw () {
   if [ -n "$reprint" ]; then
     clear
     # Determine the number of total files in the directory
-    files=$(listfiles)
+    files=$($lf)
     total=$(echo "$files" | wc -l)
-    
+
     # Determine the number of visible files
-    visible="$((lines - 2))"
+    visible="$(math $ROW - 2)"
     [ "$total" -lt "$visible" ] && visible="$total"
 
-    max_index="$((total - visible + 1))"
-    max_cursor="$((visible - 1))"
+    max_index="$(math $total - $visible + 1)"
+    max_cursor="$(math $visible - 1)"
 
     # Print the path and the list of files
     echo "${E}[1;1H${E}[K${E}[1;32m${E}[1;34m${PWD}${E}[00m"
     # Reduce the list of files to whats actually on screen
-    files=$(echo "$files" | tail -n +"$index" | head -n "$((lines - 2))" | sed 's/\(.\{'"$cols"'\}\).*/\1/;')
+    files=$(echo "$files" | tail -n +"$index" | head -n "$(math $ROW - 2)" | sed 's/\(.\{'"$COL"'\}\).*/\1/;')
 
     # Must turn selected files red before drawing them.
     IFSBK=$IFS ; IFS="$NL"
@@ -283,7 +324,7 @@ draw () {
   fi
 
   # Determine the current file
-  f=$(echo "$files" | tail -n +"$((cursor + 1))" | head -n 1)
+  f=$(echo "$files" | tail -n +"$(math $cursor + 1)" | head -n 1)
 
   # Clear the gui flags
   redraw=
@@ -291,13 +332,13 @@ draw () {
   resize=
 
   # Move the cursor to the requested position
-  pos="${E}[$((cursor + 2));1H"
+  pos="${E}[$(math $cursor + 2);1H"
 
   # Draw $f REVERSED.  If $f in sel list make text red.
   if [ -n "$(match)" ]; then
-    echo -n "$pos${RR}${f}${N}$pos"
+    echo $n "$pos${RR}${f}${N}$pos$c"
   else
-    echo -n "$pos${REV}${f}${N}$pos"
+    echo $n "$pos${REV}${f}${N}$pos$c"
   fi
 }
 
@@ -322,10 +363,10 @@ hidden=
 filter=
 if [ "$1" == "-f" -a -n "$2" ] ; then
   filter="$2"
-  action="${@:3}"
-else
-  action="${@}"
+  shift 2
 fi
+action="${@}"
+
 [ -z "$action" ] && action=less
   
 save_traps="$(trap)"
@@ -334,7 +375,7 @@ save_traps="$(trap)"
 [ -n "$(which stty)" ] && { _STTY=`stty -g`; stty -echo; }
   
 # Set up signal handlers
-trap on_resize SIGWINCH
+[ -z "$IZ2S" ] && trap on_resize SIGWINCH
 trap on_kill SIGINT
 
 # The program loop that handles the input and draws the interface
@@ -365,10 +406,10 @@ while true; do
     "${TAB}" | "${SP}")
       # If $f in $sel, remove it else add it.
       if [ -n "$(match)" ]; then
-	echo -n "${REV}${f}${N}$pos"
+	echo $n "${REV}${f}${N}$pos$c"
 	sel="$(remove)"
       else
-	echo -n "${RR}${f}${N}$pos"
+	echo $n "${RR}${f}${N}$pos$c"
 	sel="${PWD}/${f}${NL}${sel}"
       fi;;
     $C_L | r ) 
