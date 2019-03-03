@@ -87,7 +87,7 @@ get_dimensions () {
   echo -en "${E}[s${E}[999;999H${E}[6n${E}[u"
   read -sn6 -t1 S
   read -sn1 -t1 _K; S="${S}${_K}"; 
-  [ -n "_K" ] && { _K=""; read -sn1 -t1 _K; S="${S}${_K}"; }
+  [ -n "$_K" ] && { _K=""; read -sn1 -t1 _K; S="${S}${_K}"; }
   S="${S#*[}"
   cols="${S#*;}"
   cols="${cols%*R}"
