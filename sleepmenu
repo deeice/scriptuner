@@ -1,112 +1,164 @@
 # Skip #!/bin/sh - Dash has issues with read options.  Bash, Ash are OK.
 
+# Settle issues with different shells
+IZ2S=""
+if [ -n "$BASH_VERSION" ] ; then
+  echo "BASH= $BASH_VERSION"
+  n=-n; c=
+elif [ -n "$(busybox --help |grep authors)" ] ; then
+  n=-n; c=
+  echo "busybox=$(busybox --help |grep authors)"
+else 
+  # Check for old IZ2S busybox (before "many authors")
+  IZ2S="IZ2S"
+  echo "IZ2S"
+  c=\\c; n=
+fi
+[ -n "$IZ2S" ] && math() { expr $@ ; }
+[ -z "$IZ2S" ] && math() { echo $(( $@ )) ; }
+
 # keys
 E=$(printf "\033")
 NL='
 '
-
 # ANSI colors
-N="${E}[0m"
-WB="${E}[1;44;37m"
-BW="${E}[0;47;34m"
+N="$E[0m"
+WB="$E[1;44;37m"
+BW="$E[0;47;34m"
 
 # Two charsets.
 G0=$(printf "\017")
 G1=$(printf "\016")
 
 # openwrt zipit only seems to have graphic chars on charset G1
-DRAW="${G1}${E})0"
-TEXT="${G0}${E}(B"
+DRAW="$G1$E)0"
+TEXT="$G0$E(B"
 
 # $I and $J are global widget indices.
-
-px() # printat y x
-{
-  printf "${E}[%d;%dH" ${1:-1} ${2:-1}
-  [ $# -gt 2 ] && {
-    shift 2
-    printf "%s" "$*"
-  }
-}
 
 get_key() # Skips Space and NL, but works in ash without stty.
 {
   read -rsn1 _KEY
-  case "${_KEY}" in
-     "${E}") _K=""; read -n1 -t1 _K; _KEY="${E}${_K}"; 
-	[ -n "$_K" ] && { _K=""; read -n1 -t1 _K; _KEY="${_KEY}${_K}"; }
+  case "$_KEY" in
+     "${E}") _K=""; read -n1 -t1 _K; _KEY="$E$_K"; 
+	[ -n "_K" ] && { _K=""; read -n1 -t1 _K; _KEY="$_KEY$_K"; }
   ;; "") _KEY=" "
   ;;
   esac
 }
 
-##### Get TUI screen offset  ######
-_K=""
-echo -en "${E}[s${E}[999;999H${E}[6n${E}[u"
-read -sn6 -t1 S
-read -sn1 -t1 _K; S="${S}${_K}"; 
-[ -n "_K" ] && { _K=""; read -sn1 -t1 _K; S="${S}${_K}"; }
+STTY="$(which stty)"
+if [ -n "$STTY" ] ; then
+  STTY=$(stty -g)
+  stty -echo
+  S=$(stty size)
+else
+  S=
+fi
 
-S="${S#*[}"
-COL="${S#*;}"
-COL="${COL%*R}"
-ROW="${S%;*}"
-Y=$((($ROW - 19) / 2 + 1))
-X=$((($COL - 45) / 2 + 1))
+##### Get screen size ######
+if [ -n "$S" ] ; then
+  ROW=$(echo $S | cut -d " " -f 1)
+  COL=$(echo $S | cut -d " " -f 2)
+else
+  _K=""
+  echo $n "$E[s$E[999;999H$E[6n$E[u"
+  read -sn6 -t1 S
+  read -sn1 -t1 _K; S="$S$_K"; 
+  [ -n "$_K" ] && { _K=""; read -sn1 -t1 _K; S="$S$_K"; }
+
+  S="${S#*[}"
+  COL="${S#*;}"
+  COL="${COL%*R}"
+  ROW="${S%;*}"
+fi
+
+ShowTUI()
+{
+##### Get TUI screen offset ######
+Y=$(math $ROW - 19)
+X=$(math $COL - 45)
+Y=$(math $Y / 2 + 1)
+X=$(math $X / 2 + 1)
+
+# Do TUI math up front since expr is slow.
+x="${X}H"
+Y1="$E[$(math $Y + 1);"; L1="$Y1$x"
+Y2="$E[$(math $Y + 2);"; L2="$Y2$x"
+Y3="$E[$(math $Y + 3);"; L3="$Y3$x"
+Y4="$E[$(math $Y + 4);"; L4="$Y4$x"
+Y5="$E[$(math $Y + 5);"; L5="$Y5$x"
+Y6="$E[$(math $Y + 6);"; L6="$Y6$x"
+Y7="$E[$(math $Y + 7);"; L7="$Y7$x"
+Y8="$E[$(math $Y + 8);"; L8="$Y8$x"
+Y9="$E[$(math $Y + 9);"; L9="$Y9$x"
+Y10="$E[$(math $Y + 10);"; L10="$Y10$x"
+Y11="$E[$(math $Y + 11);"; L11="$Y11$x"
+Y12="$E[$(math $Y + 12);"; L12="$Y12$x"
+Y13="$E[$(math $Y + 13);"; L13="$Y13$x"
+Y14="$E[$(math $Y + 14);"; L14="$Y14$x"
+Y15="$E[$(math $Y + 15);"; L15="$Y15$x"
+Y16="$E[$(math $Y + 16);"; L16="$Y16$x"
+Y17="$E[$(math $Y + 17);"; L17="$Y17$x"
+Y18="$E[$(math $Y + 18);"; L18="$Y18$x"
+Y19="$E[$(math $Y + 19);"; L19="$Y19$x"
+
+X1=$(math $X + 1)
+X2=$(math $X + 2)
+X5=$(math $X + 5)
+X20=$(math $X + 20)
+X34=$(math $X + 34)
 
 # Define TUI Widgets (Location, EraseStr, String)
 # (no widget names, types, or lengths needed for simple menu)
-x=$(($X + 1))
+x="${X1}H"
 ######   Message strings  ######
 S41="$(printf "%-41s")"
-WA1="${E}[$(($Y + 2));${x}H";  WE1="$WA1$S41$WA1"
-WA2="${E}[$(($Y + 3));${x}H";  WE2="$WA2$S41$WA2"
-WA3="${E}[$(($Y + 4));${x}H";  WE3="$WA3$S41$WA3"
+WA1="$Y2$x";  WE1="$WA1$S41$WA1"
+WA2="$Y3$x";  WE2="$WA2$S41$WA2"
+WA3="$Y4$x";  WE3="$WA3$S41$WA3"
 ######   Menu Options  ######
-x=$(($X + 2))
-WA4="${E}[$(($Y + 6));${x}H";   WE4="$WA4$S41$WA4";    WS4="5 Minutes"
-WA5="${E}[$(($Y + 7));${x}H";   WE5="$WA5$S41$WA5";    WS5="10 Minutes"
-WA6="${E}[$(($Y + 8));${x}H";   WE6="$WA6$S41$WA6";    WS6="20 Minutes"
-WA7="${E}[$(($Y + 9));${x}H";   WE7="$WA7$S41$WA7";    WS7="30 minutes"
-WA8="${E}[$(($Y + 10));${x}H";  WE8="$WA8$S41$WA8";    WS8="45 minutes"
-WA9="${E}[$(($Y + 11));${x}H";  WE9="$WA9$S41$WA9";    WS9="1 Hour"
-WA10="${E}[$(($Y + 12));${x}H"; WE10="$WA10$S41$WA10"; WS10="2 Hours"
-WA11="${E}[$(($Y + 13));${x}H"; WE11="$WA11$S41$WA11"; WS11="3 Hours"
-WA12="${E}[$(($Y + 14));${x}H"; WE12="$WA12$S41$WA12"; WS12="User defined"
+x="${X2}H"
+WA4="$Y6$x";   WE4="$WA4$S41$WA4";    WS4="5 Minutes"
+WA5="$Y7$x";   WE5="$WA5$S41$WA5";    WS5="10 Minutes"
+WA6="$Y8$x";   WE6="$WA6$S41$WA6";    WS6="20 Minutes"
+WA7="$Y9$x";   WE7="$WA7$S41$WA7";    WS7="30 minutes"
+WA8="$Y10$x";  WE8="$WA8$S41$WA8";    WS8="45 minutes"
+WA9="$Y11$x";  WE9="$WA9$S41$WA9";    WS9="1 Hour"
+WA10="$Y12$x"; WE10="$WA10$S41$WA10"; WS10="2 Hours"
+WA11="$Y13$x"; WE11="$WA11$S41$WA11"; WS11="3 Hours"
+WA12="$Y14$x"; WE12="$WA12$S41$WA12"; WS12="User defined"
 #######  Buttons  #######
 # Button text lengths must fit in the boxes laid out in DRAW mode.
-y=$(($Y + 17)) 
-WA20="${E}[${y};$(($X + 5))H";  WE20="$WA20     $WA20";  WS20="Sleep"
-WA21="${E}[${y};$(($X + 20))H"; WE21="$WA21    $WA21";   WS21="Stop"
-WA22="${E}[${y};$(($X + 34))H"; WE22="$WA22      $WA22"; WS22="Cancel"
+WA20="$Y17${X5}H";  WE20="$WA20     $WA20";  WS20="Sleep"
+WA21="$Y17${X20}H"; WE21="$WA21    $WA21";   WS21="Stop"
+WA22="$Y17${X34}H"; WE22="$WA22      $WA22"; WS22="Cancel"
 
 ###################
-ShowTUI()
-{
-printf "${E}[2J"
+echo $n "$E[2J$c"
 
 # Must use UPPERCASE for any words in DRAW mode.  Or add labels later.
-px $(($Y + 0))  $X "$WB$DRAW"
-px $(($Y + 1))  $X "lqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqk"
-px $(($Y + 2))  $X "x                                           x"
-px $(($Y + 3))  $X "x                                           x"
-px $(($Y + 4))  $X "x                                           x"
-px $(($Y + 5))  $X "tqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqu"
-px $(($Y + 6))  $X "x                                           x"
-px $(($Y + 7))  $X "x                                           x"
-px $(($Y + 8))  $X "x                                           x"
-px $(($Y + 9))  $X "x                                           x"
-px $(($Y + 10)) $X "x                                           x"
-px $(($Y + 11)) $X "x                                           x"
-px $(($Y + 12)) $X "x                                           x"
-px $(($Y + 13)) $X "x                                           x"
-px $(($Y + 14)) $X "x                                           x"
-px $(($Y + 15)) $X "tqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqu"
-px $(($Y + 16)) $X "x  lqqqqqqqk      lqqqqqqqk     lqqqqqqqqk  x"
-px $(($Y + 17)) $X "x  x       x      x       x     x        x  x"
-px $(($Y + 18)) $X "x  mqqqqqqqj      mqqqqqqqj     mqqqqqqqqj  x"
-px $(($Y + 19)) $X "mqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqj"
-printf "$TEXT$WB"
+echo "$E[$Y;${X}H$WB$DRAW"
+echo  "${L1}lqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqk"
+echo  "${L2}x                                           x"
+echo  "${L3}x                                           x"
+echo  "${L4}x                                           x"
+echo  "${L5}tqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqu"
+echo  "${L6}x                                           x"
+echo  "${L7}x                                           x"
+echo  "${L8}x                                           x"
+echo  "${L9}x                                           x"
+echo "${L10}x                                           x"
+echo "${L11}x                                           x"
+echo "${L12}x                                           x"
+echo "${L13}x                                           x"
+echo "${L14}x                                           x"
+echo "${L15}tqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqu"
+echo "${L16}x  lqqqqqqqk      lqqqqqqqk     lqqqqqqqqk  x"
+echo "${L17}x  x       x      x       x     x        x  x"
+echo "${L18}x  mqqqqqqqj      mqqqqqqqj     mqqqqqqqqj  x"
+echo "${L19}mqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqj"
+echo $n "$TEXT$WB$c"
 # 
 # Done with DRAW mode.  Now we can use lower case.
 #
@@ -114,18 +166,18 @@ echo "${WE1}         Radio Sleep/Shutoff Timer"
 echo "${WE3}How long before the music stops?"
 
 # Menu options.  Draw the selected text BW reverse text.
-echo "${WE4}${BW}${WS4}${WB}"
-echo "${WE5}${WS5}"
-echo "${WE6}${WS6}"
-echo "${WE7}${WS7}"
-echo "${WE8}${WS8}"
-echo "${WE9}${WS9}"
-echo "${WE10}${WS10}"
-echo "${WE11}${WS11}"
-echo "${WE12}${WS12}"
+echo "$WE4$BW$WS4$WB"
+echo "$WE5$WS5"
+echo "$WE6$WS6"
+echo "$WE7$WS7"
+echo "$WE8$WS8"
+echo "$WE9$WS9"
+echo "$WE10$WS10"
+echo "$WE11$WS11"
+echo "$WE12$WS12"
 
 # Draw selected button text BW reverse text.
-echo "${WE20}${BW}${WS20}${WB}${WE21}${WS21}${WE22}${WS22}"
+echo "$WE20$BW$WS20$WB$WE21$WS21$WE22$WS22"
 }
 
 # Boolean/PushButton handler
@@ -143,24 +195,25 @@ button()
 ShowTUI
 
 # Initial setup.  Start at 1st menu op and button.
-J=4
-I=20; y=17; x=5
+J=4; I=20; x=5
 eval STR=\$WS$I
 
 # Run main dialog box until ESC
 while :
 do
-px $(($Y + $y)) $(($X + $x))
+# Draw button    
+YX="$Y17$(math $X + $x)H"
+echo $n "$BW$YX$STR$YX$c"
 get_key
 MV=0 # Handle widget traversal (UP,DN,TAB).
 case $_KEY in
    " ") eval $(button)
 ;; ${NL}) eval $(button)
 ;; "${E}") STR="Cancel"; break
-;; "${E}[A") MV=$J ; J=$(($J - 1)) #UP
-;; "${E}[B") MV=$J ; J=$(($J + 1)) #DN
-;; "${E}[C") MV=$I ; I=$(($I + 1)) #>>
-;; "${E}[D") MV=$I ; I=$(($I - 1)) #<<
+;; "${E}[A") MV=$J ; J=$(math $J - 1) #UP
+;; "${E}[B") MV=$J ; J=$(math $J + 1) #DN
+;; "${E}[C") MV=$I ; I=$(math $I + 1) #>>
+;; "${E}[D") MV=$I ; I=$(math $I - 1) #<<
 ;;
 esac
 
@@ -169,29 +222,27 @@ if [ $MV -ne 0 ] ; then
   # Clear and restore old menu option before moving on.
   eval WE=\$WE$MV
   eval STR=\$WS$MV
-  echo "${WB}${WE}${STR}${BW}"
+  echo $n "$WB$WE$STR$BW$c"
   if [ $MV -lt 20 ] ; then # Switch Menu Option
     [ "$J" -lt 4 ] && J=4
     [ "$J" -gt 12 ] && J=12
-    y=$(($J + 2));  x=2
     eval STR=\$WS$J
-    px $(($Y + $y)) $(($X + $x)) $STR
+    echo $n "$E[$(math $Y + $J + 2);${X2}H$STR$c"
   fi
-  # Always redraw button last
+  # Get button
   [ "$I" -lt 20 ] && I=20
   [ "$I" -gt 22 ] && I=22
-  if [ "$I" -eq 20 ] ; then y=17; x=5
-  elif [ "$I" -eq 21 ] ; then y=17; x=20
-  elif [ "$I" -eq 22 ] ; then y=17; x=34
-  fi
+  [ "$I" -eq 20 ] && x=5
+  [ "$I" -eq 21 ] && x=20
+  [ "$I" -eq 22 ] && x=34
   eval STR=\$WS$I
-  px $(($Y + $y)) $(($X + $x)) $STR
 fi
 done
 
 #######
 # Go to top left (1,1), set normal text, fix tty
-px 1 1 $N
+echo $n "$E[1;1H$N$c"
+stty "$STTY"
 stty sane
 clear
 
@@ -215,7 +266,7 @@ elif [ "$var" = "User" ] 2>/dev/null; then
   echo "How many minutes before the music stops?"
   read var
 elif [ "$var" -lt 5 ] 2>/dev/null; then
-  var=$(( var * 60  )) # Convert hours to minutes
+  var=$(math $var * 60) # Convert hours to minutes
 fi
 if [ "$var" -eq "$var" ] 2>/dev/null; then
   deallocvt
