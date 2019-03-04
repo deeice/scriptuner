@@ -125,6 +125,7 @@ get_dimensions () {
     COL="${COL%*R}"
     ROW="${S%;*}"
   fi
+  ROW="$(math $ROW - 2)" # skip rows at top, bottom
 }
 
 # NOTE: This struggles to keep up when auto key repeat happens on zipit.
@@ -201,7 +202,7 @@ move () {
   old_index="$index"
   cursor="$(math $cursor + $arg)"
 
-  if [ "$cursor" -ge "$visible" ]; then
+  if [ "$cursor" -gt "$visible" ]; then
     # Cursor moved past the bottom of the list
 
     if [ "$visible" -ge "$total" ]; then
@@ -209,14 +210,14 @@ move () {
       index=1
     else
       # The list doesn't fit on the screen.
-      if [ "$(math $index + $cursor)" -gt "$total" ]; then
+      index="$(math $index + $cursor - 1)"
+      if [ "$index" -gt "$total" ]; then
         # Cursor out of bounds. Put it at the very bottom.
         index="$max_index"
       else
         # Move the index down so the visible part of the list
         # also shows the cursor
-        difference="$(math $visible - 1 - $cursor)"
-        index="$(math $index - $difference)"
+        index="$(math $index + 1 - $visible)"
       fi
     fi
 
@@ -224,10 +225,10 @@ move () {
     cursor="$max_cursor"
   fi
 
-  if [ "$cursor" -lt 0 ]; then
+  if [ "$cursor" -lt 1 ]; then
     # Cursor is above the list, so scroll up.
-    index="$(math $index + $cursor)"
-    cursor=0
+    index="$(math $index + $cursor - 1)"
+    cursor=1
   fi
 
   # The index should always be >0 and <$max_index
@@ -283,7 +284,7 @@ movedir () {
   redraw=1
   reprint=1
   index=1
-  cursor=0
+  cursor=1
   cd "$1"
   PWD="$(pwd)"
 }
@@ -298,16 +299,16 @@ draw () {
     total=$(echo "$files" | wc -l)
 
     # Determine the number of visible files
-    visible="$(math $ROW - 2)"
+    visible="$ROW"
     [ "$total" -lt "$visible" ] && visible="$total"
 
     max_index="$(math $total - $visible + 1)"
-    max_cursor="$(math $visible - 1)"
+    max_cursor="$visible"
 
     # Print the path and the list of files
     echo "${E}[1;1H${E}[K${E}[1;32m${E}[1;34m${PWD}${E}[00m"
     # Reduce the list of files to whats actually on screen
-    files=$(echo "$files" | tail -n +"$index" | head -n "$(math $ROW - 2)" | sed 's/\(.\{'"$COL"'\}\).*/\1/;')
+    files=$(echo "$files" | tail -n +"$index" | head -n "$ROW" | sed 's/\(.\{'"$COL"'\}\).*/\1/;')
 
     # Must turn selected files red before drawing them.
     IFSBK=$IFS ; IFS="$NL"
@@ -324,7 +325,7 @@ draw () {
   fi
 
   # Determine the current file
-  f=$(echo "$files" | tail -n +"$(math $cursor + 1)" | head -n 1)
+  f=$(echo "$files" | tail -n +"$cursor" | head -n 1)
 
   # Clear the gui flags
   redraw=
@@ -332,7 +333,7 @@ draw () {
   resize=
 
   # Move the cursor to the requested position
-  pos="${E}[$(math $cursor + 2);1H"
+  pos="${E}[$(math $cursor + 1);1H"
 
   # Draw $f REVERSED.  If $f in sel list make text red.
   if [ -n "$(match)" ]; then
@@ -348,7 +349,7 @@ sel=""
 
 # Initialize position variables
 index=1   # the number of the topmost visible line
-cursor=0  # the number of the selected file, relative to index
+cursor=1  # the number of the selected file, relative to index (+1)
 total=0   # total number of files in this directory
 visible=0 # total visible on screen
 
