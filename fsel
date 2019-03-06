@@ -98,7 +98,7 @@ on_exit () {
   
   # Place the cursor at a sane position
   [ -z "$total" ] && total="$($lf | wc -l)"
-  echo $n "${E}[$(math $total - $index + 3);1H$c"
+  echo $n "$E[$(math $total - $index + 3);1H$E[K$c"
 }
 
 on_kill () {
@@ -125,6 +125,8 @@ get_dimensions () {
     COL="${COL%*R}"
     ROW="${S%;*}"
   fi
+  HDR="$E[1;1H$E[K"
+  FTR="$E[$ROW;1H$E[K"
   ROW="$(math $ROW - 2)" # skip rows at top, bottom
 }
 
@@ -182,7 +184,7 @@ act () {
   for f in $revsel ; do
     [ -z "$f" ] && return
     [ -d "$f" ] && f="$f*" #apply filter?
-    eval $action "$f"
+    eval $action \""$f"\"
   done
   IFS=$IFSBAK ; IFSBAK=
 }
@@ -305,8 +307,11 @@ draw () {
     max_index="$(math $total - $visible + 1)"
     max_cursor="$visible"
 
+
     # Print the path and the list of files
-    echo "${E}[1;1H${E}[K${E}[1;32m${E}[1;34m${PWD}${E}[00m"
+    DIR=$(echo $PWD | sed 's/\(.\{'"$COL"'\}\).*/\1/;')
+    echo $n "$FTR${B}$DIR$N$c"
+    echo    "$HDR${WB}Make your selection.  Filter = [$filter]$N"
     # Reduce the list of files to whats actually on screen
     files=$(echo "$files" | tail -n +"$index" | head -n "$ROW" | sed 's/\(.\{'"$COL"'\}\).*/\1/;')
 
