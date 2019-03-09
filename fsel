@@ -24,6 +24,7 @@ else
   [ -z "$(busybox |grep ls)" ] && wc="sed -n $="
 
   #lf="lsfiles"  # DEBUG Delete Me
+  #wc="/mnt/ffs/bin/sed -n $="  # DEBUG Delete Me
 fi
 [ -n "$IZ2S" ] && math() { expr $@ ; }
 [ -z "$IZ2S" ] && math() { echo $(( $@ )) ; }
@@ -264,32 +265,39 @@ move () {
   [ "$index" -lt 1 ] && index=1
 }
 
+# List dirs, then files
+dirfiles () {
+  IFSBK=$IFS ; IFS="$NL"
+  fd=  
+  ff=  
+  for f in $files ; do
+    [ -d "$f" ] && fd=$fd${fd:+$NL}$f$s
+  done
+  for f in $files ; do
+    [ ! -d "$f" ] && ff=$ff${ff:+$NL}$f
+  done
+  IFS=$IFSBK ; IFSBK=
+}
+
 # List the files
 listfiles () {
   local args="-pL"
   [ -n "$hidden" ] && args="$args -A"
   if [ -n "$filter" ]; then
-    $ls "$args" | grep -e / -e "$filter"
+    files=$($ls "$args" | grep -e / -e "$filter")
   else
-    $ls "$args"
+    files=$($ls "$args")
   fi
+  s=; dirfiles
+  echo "$fd${fd:+$NL}$ff"
 }
 
 # List files with broken busybox, add / to dirs.
 lsfiles () {
   files=$(lsattr 2>&1 |cut -d/ -f2 |cut -d: -f1)
-  IFSBK=$IFS ; IFS="$NL"
-  ff=  
-  for f in $files ; do
-    [ -d "$f" ] && f=$f/
-    ff=$ff${ff:+$NL}$f
-  done
-  IFS=$IFSBK ; IFSBK=
-  if [ -n "$filter" ]; then
-    echo "$ff" | grep -e / -e "$filter" # NOTE: Check if -e supported on iz2jffs
-  else
-    echo "$ff"
-  fi
+  s=/; dirfiles
+  [ -n "$filter" ] && ff=$(echo "$ff" | grep "$filter")
+  echo "$fd${fd:+$NL}$ff"
 }
 
 # Change the directory
@@ -370,10 +378,8 @@ cursor=1  # the number of the selected file, relative to index (+1)
 total=0   # total number of files in this directory
 visible=0 # total visible on screen
 
-# Variables related to the GUI
-redraw=1  # should the draw() function be entered?
-reprint=1 # should the interface be redrawn?
-resize=1
+# Init vars related to the GUI
+on_resize
 maxstep=6
 
 # Initialize settings (need to pass in action and possibly a filter)
