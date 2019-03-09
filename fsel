@@ -1,7 +1,8 @@
 
 # Settle issues with different shells
-IZ2S=""
+IZ2S=
 ls="ls"
+wc="wc -l"
 lf="listfiles"
 if [ -n "$BASH_VERSION" ] ; then
   echo "BASH= $BASH_VERSION"
@@ -18,7 +19,9 @@ else
   # SD card busybox apps are ok.
   ls="busybox ls"
   # If on iz2jffs with no SD then use lsattr as a fake ls
-  [ -z $(busybox |grep ls) ] && lf="lsfiles"
+  [ -z "$(busybox |grep ls)" ] && lf="lsfiles"
+  # Use sed to count on jffs
+  [ -z "$(busybox |grep ls)" ] && wc="sed -n $="
 
   #lf="lsfiles"  # DEBUG Delete Me
 fi
@@ -112,7 +115,7 @@ get_dimensions () {
     ROW=$(echo $S | cut -d " " -f 1)
     COL=$(echo $S | cut -d " " -f 2)
   else
-    _K=""
+    _K=
     echo $n "$E[s$E[999;999H$E[6n$E[u"
     read -sn6 -t1 S
     read -sn1 -t1 _K; S="$S$_K"; 
@@ -173,7 +176,7 @@ remove () {
 }
 
 act () {
-  revsel=""
+  revsel=
   IFSBAK=$IFS ; IFS="$NL"
   for line in ${sel:-$PWD/$f}; do
     revsel="${line}${revsel:+$NL}$revsel"
@@ -261,23 +264,25 @@ move () {
   [ "$index" -lt 1 ] && index=1
 }
 
-# List the files (possibly filtered).  Adjust filter to not skip directories
+# List the files
 listfiles () {
   local args="-pL"
   [ -n "$hidden" ] && args="$args -A"
-  if [ -n "$filter" ]; then
-    $ls "$args" | grep -e / -e "$filter"
-  else
-    $ls "$args"
-  fi
+  $ls $args
 }
 
+# List files with broken busybox, add / to dirs.
 lsfiles () {
-  if [ -n "$filter" ]; then
-    lsattr 2>&1 |cut -d/ -f2 |cut -d: -f1 |grep -e / -e "$filter"
-  else
-    lsattr 2>&1 |cut -d/ -f2 |cut -d: -f1
-  fi
+  files=$(lsattr 2>&1 |cut -d/ -f2 |cut -d: -f1)
+  IFSBK=$IFS ; IFS="$NL"
+  ff=  
+  for f in $files ; do
+    [ -d "$f" ] && f=$f/
+    ff=$ff${ff:+$NL}$f
+  done
+  IFS=$IFSBK ; IFSBK=
+  files=$ff
+  echo "$files"
 }
 
 # Change the directory
@@ -295,9 +300,10 @@ draw () {
   # Erase the screen if necessary
   if [ -n "$reprint" ]; then
     clear
-    # Determine the number of total files in the directory
+    # Get list of files (possibly filtered) and total
     files=$($lf)
-    total=$(echo "$files" | wc -l)
+    [ -n "$filter" ] && files=$(echo "$files" | grep -e / -e "$filter")
+    total=$(echo "$files" | $wc)
 
     # Determine the number of visible files
     visible="$ROW"
@@ -308,7 +314,7 @@ draw () {
 
 
     # Print the path and the list of files
-    DIR=$(echo $PWD | sed 's/\(.\{'"$COL"'\}\).*/\1/;')
+    DIR=$(echo $n $PWD$c | tail -c$COL)
     echo $n "$FTR${B}$DIR$N$c"
     echo    "$HDR${WB}Make your selection.  Filter = [$filter]$N"
     # Reduce the list of files to whats actually on screen
@@ -347,9 +353,10 @@ draw () {
   fi
 }
 
+
 # Initialize selection variables
 PWD="$(pwd)"
-sel=""
+sel=
 
 # Initialize position variables
 index=1   # the number of the topmost visible line
@@ -366,7 +373,7 @@ maxstep=6
 # Initialize settings (need to pass in action and possibly a filter)
 hidden=
 filter=
-if [ "$1" == "-f" -a -n "$2" ] ; then
+if [ -n "$2" ] && [ -f == "$1" ] ; then
   filter="$2"
   shift 2
 fi
