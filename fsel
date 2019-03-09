@@ -268,7 +268,11 @@ move () {
 listfiles () {
   local args="-pL"
   [ -n "$hidden" ] && args="$args -A"
-  $ls $args
+  if [ -n "$filter" ]; then
+    $ls "$args" | grep -e / -e "$filter"
+  else
+    $ls "$args"
+  fi
 }
 
 # List files with broken busybox, add / to dirs.
@@ -281,8 +285,11 @@ lsfiles () {
     ff=$ff${ff:+$NL}$f
   done
   IFS=$IFSBK ; IFSBK=
-  files=$ff
-  echo "$files"
+  if [ -n "$filter" ]; then
+    echo "$ff" | grep -e / -e "$filter" # NOTE: Check if -e supported on iz2jffs
+  else
+    echo "$ff"
+  fi
 }
 
 # Change the directory
@@ -302,7 +309,6 @@ draw () {
     clear
     # Get list of files (possibly filtered) and total
     files=$($lf)
-    [ -n "$filter" ] && files=$(echo "$files" | grep -e / -e "$filter")
     total=$(echo "$files" | $wc)
 
     # Determine the number of visible files
