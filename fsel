@@ -135,26 +135,56 @@ get_dimensions () {
 get_key() # Works without stty but takes a sec for ESC key (not ESC sequence) 
 {
   IFSBAK=$IFS ; IFS=
-  read -rsn1 _KEY
-  case "${_KEY}" in
-    "${E}") _K=""; read -sn2 -t1 _K; _KEY="${E}${_K}";
-      case "${_K}" in
+  read -sn1 _KEY
+  case "$_KEY" in
+    "$E") _K=; read -rsn2 -t1 _K; _KEY="$E$_K";
+      case "$_K" in
 	"[A"|"[B"|"[C"|"[D"|"") ;;
-	"OP"|"OQ"|"OR"|"OS") ;;
-	*) _K=""; read -n1 -t1 _K; _KEY="${_KEY}${_K}" ;;
+	"OP"|"OQ"|"OR"|"OS"|"OH"|"OF") ;;
+	*) _K=; read -n1 -t1 _K; _KEY="$_KEY$_K" ;;
       esac
   ;;  "") _KEY="NL"
   ;;
   esac
+
+  # On openwrt I need kbhit or somesuch to do event compression.
+  if [ -n $_STTY ] ; then
+    _K=$(dd count=3 2>/dev/null) # Eat one lump of excess chars but dont loop.
+    if [ -n "$_K" ] ; then 
+      [ "$_KEY" == "$DN" ] && _KEY="DN" # double UP or DN
+      [ "$_KEY" == "$UP" ] && _KEY="UP"
+    fi
+  fi
   IFS=$IFSBAK ; IFSBAK=
 }
 
+###############################
+get() ## get a single keystroke from stdin without waiting
+{  ####stty -echo -icanon time 1 min 0
+  _KEY=$(dd count=1  2>/dev/null; echo '.') # need . to catch NL
+  _KEY="${_KEY%.}"
+  [ -n "$_KEY" ]
+}
+
+get_k()
+{
+  while :; do get && break; done
+  case $_KEY in
+     "$E") _KEY=; read _KEY; _KEY="$E$_KEY"
+  ;; "$NL"|"") _KEY="NL"
+  ;;
+  esac
+}
+###############################
+
 # search sel list for a match
 match () {
+  match=
   IFSBAK=$IFS ; IFS="$NL"
   for line in $sel ; do
     if [ "${PWD}/$f" == "$line" ] ; then
-      echo "$line"
+      #echo "$line"
+      match="$line"
       break
     fi
   done
@@ -191,7 +221,8 @@ move () {
   redraw=1
 
   #if $f is in sel list then redraw it red, else redraw normal
-  if [ -n "$(match)" ]; then
+  match
+  if [ -n "$match" ]; then
     echo $n "${R}${f}${N}$c"
   else
     echo $n "${f}$c"
@@ -326,7 +357,8 @@ draw () {
   pos="${E}[$(math $cursor + 1);1H"
 
   # Draw $f REVERSED.  If $f in sel list make text red.
-  if [ -n "$(match)" ]; then
+  match
+  if [ -n "$match" ]; then
     echo $n "$pos${RR}${f}${N}$pos$c"
   else
     echo $n "$pos${REV}${f}${N}$pos$c"
@@ -360,7 +392,7 @@ action="${@}"
 save_traps="$(trap)"
 
 # Set terminal to hide keystrokes.
-[ -n "$(which stty)" ] && { _STTY=`stty -g`; stty -echo; }
+[ -n "$(which stty)" ] && { _STTY=`stty -g`; stty -echo -icanon time 1 min 0; }
   
 # Set up signal handlers
 [ -z "$IZ2S" ] && trap on_resize SIGWINCH
@@ -375,34 +407,39 @@ while true; do
   get_key
   
   case "$_KEY" in
-    "${DN}")
+    "$DN")
       move 1;;
-    "${PD}")
+    "DN")
+      move 2;;
+    "$PD")
       move 10;;
-    "${PU}")
+    "$PU")
       move -10;;
-    "${UP}")
+    "$UP")
       move -1;;
-    "${EN}" | "${END}")
-      move 9999999999;;
-    "${HM}" | "${HOM}")
-      move -9999999999;;
-    "${LF}")
+    "UP")
+      move -2;;
+    "$EN" | "$END")
+      move 99999;;
+    "$HM" | "$HOM")
+      move -99999;;
+    "$LF")
       movedir ..;;
-    "${RT}" )
+    "$RT" )
       [ -d "$f" ] && movedir "$f";;
-    "${TAB}" | "${SP}")
+    "$TAB" | "$SP")
       # If $f in $sel, remove it else add it.
-      if [ -n "$(match)" ]; then
-	echo $n "${REV}${f}${N}$pos$c"
+      match
+      if [ -n "$match" ]; then
+	echo $n "$REV$f${N}$pos$c"
 	sel="$(remove)"
       else
-	echo $n "${RR}${f}${N}$pos$c"
-	sel="${PWD}/${f}${NL}${sel}"
+	echo $n "$RR$f$N$pos$c"
+	sel="$PWD/$f$NL${sel}"
       fi;;
     $C_L | r ) 
       on_resize;;
-    "${E}" | q )
+    "$E" | q )
       on_exit
       break;;
     "NL" )
