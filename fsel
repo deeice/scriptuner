@@ -158,25 +158,6 @@ get_key() # Works without stty but takes a sec for ESC key (not ESC sequence)
   IFS=$IFSBAK ; IFSBAK=
 }
 
-###############################
-get() ## get a single keystroke from stdin without waiting
-{  ####stty -echo -icanon time 1 min 0
-  _KEY=$(dd count=1  2>/dev/null; echo '.') # need . to catch NL
-  _KEY="${_KEY%.}"
-  [ -n "$_KEY" ]
-}
-
-get_k()
-{
-  while :; do get && break; done
-  case $_KEY in
-     "$E") _KEY=; read _KEY; _KEY="$E$_KEY"
-  ;; "$NL"|"") _KEY="NL"
-  ;;
-  esac
-}
-###############################
-
 # search sel list for a match
 match () {
   match=
@@ -391,7 +372,7 @@ action="${@}"
 
 save_traps="$(trap)"
 
-# Set terminal to hide keystrokes.
+# Set terminal to hide keystrokes and timeout reads at .1s
 [ -n "$(which stty)" ] && { _STTY=`stty -g`; stty -echo -icanon time 1 min 0; }
   
 # Set up signal handlers
