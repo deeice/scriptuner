@@ -148,7 +148,7 @@ get_key() # Works without stty but takes a sec for ESC key (not ESC sequence)
   esac
 
   # On openwrt I need kbhit or somesuch to do event compression.
-  if [ -n $_STTY ] ; then
+  if [ -n $_STTY ] && [ -z "$BASH_VERSION" ] ; then
     _K= # If not stub stty (with echo only) eat one lump of excess chars but dont loop.
     [ "$_STTY" != "echo" ] && _K=$(dd count=3 2>/dev/null)
     if [ -n "$_K" ] ; then 
