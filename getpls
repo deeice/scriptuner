@@ -1,0 +1,39 @@
+#!/bin/sh
+
+export LANG=C
+export DIALOGRC=/usr/share/ziptuner/dialogrc.soho
+svr="http://192.168.2.82:8080"
+
+fetch_url()
+{
+F="$1"
+
+wget $svr$F -q -O - | sed -n 's/.*href="\([^"]*\)".*/\1/p' |grep $F >/tmp/links.txt
+
+sed -e "s:$F::" -e 's/%20/ /g' /tmp/links.txt >/tmp/items.txt
+lst=""
+while read -r line; do
+  lst="$lst \"$line\" \" \""
+done < /tmp/items.txt
+
+D=$(echo $F | sed -e 's/%20/ /g')
+2>/tmp/res eval dialog --title "\"Get Playlist\"" --menu "\"$D\"" 21 49 15 $lst
+}
+
+# Start at / and Loop while url ends with /
+url="$1/"
+while [ "$(echo -n $url |tail -c 1)" = "/" ]; do
+fetch_url $url
+res=$(sed -e 's/ /%20/g' /tmp/res)
+[ -z "$res" ] && exit # Quit  on CANCEL
+[ "$res" = "../" ] && url="$(dirname $url)/" || url="$url$res"
+done
+
+# Fetch pls files only.  Maybe save url in .pls for others.
+[ "${url##*.}" != "pls" ] && exit
+wget $svr$url -q -O /tmp/__album.pls
+
+dialog --yesno "Play it Now?" 5 20
+[ $? -ne 0 ] && exit
+echo "Now playing $res"
+gmubg
