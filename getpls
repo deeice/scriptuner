@@ -7,16 +7,16 @@ svr="http://192.168.2.82:8080"
 fetch_url()
 {
 F="$1"
-
+# Fetch dir listing from web and scrape (local) links
 wget $svr$F -q -O - | sed -n 's/.*href="\([^"]*\)".*/\1/p' |grep $F >/tmp/links.txt
-
+# Strip path, convert %20 to spaces, add quotes, form list for dialog
 sed -e "s:$F::" -e 's/%20/ /g' /tmp/links.txt >/tmp/items.txt
-lst=""
+lst="" # Make items into list of "item" " " for dialog
 while read -r line; do
-  lst="$lst \"$line\" \" \""
+  lst="$lst \"$line\" \" \"" # The " " tag is where dialog puts cursor.
 done < /tmp/items.txt
-
-D=$(echo $F | sed -e 's/%20/ /g')
+# Display dialog with list of dir items. Use eval to turn quotes into args.
+D=$(echo $F | sed -e 's/%20/ /g') # Show path above list
 2>/tmp/res eval dialog --title "\"Get Playlist\"" --menu "\"$D\"" 21 49 15 $lst
 }
 
